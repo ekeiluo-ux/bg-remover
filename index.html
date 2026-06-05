@@ -11,15 +11,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 h1{font-size:22px;font-weight:600;margin-bottom:4px}
 .sub{font-size:14px;color:#888;margin-bottom:20px}
 .panel{background:#fff;border-radius:12px;border:1px solid #e5e5e5;padding:20px;margin-bottom:14px}
-.ptitle{font-size:14px;font-weight:600;color:#444;margin-bottom:14px;display:flex;align-items:center;gap:6px}
-.key-row{display:flex;gap:10px;align-items:center}
-.key-row input{flex:1;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;font-family:monospace}
-.key-row input:focus{border-color:#6c5ce7;box-shadow:0 0 0 3px rgba(108,92,231,.1)}
-.key-row input.valid{border-color:#27ae60;background:#f0fff4}
-.key-row input.invalid{border-color:#e74c3c;background:#fff5f5}
-.key-status{font-size:12px;margin-top:6px}
-.tip-box{background:#f0f4ff;border:1px solid #c7d7fc;border-radius:8px;padding:12px 14px;font-size:13px;color:#3b4fb8;margin-top:10px;line-height:1.8}
-.tip-box a{color:#6c5ce7;font-weight:500}
+.ptitle{font-size:14px;font-weight:600;color:#444;margin-bottom:14px}
+.status-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;font-size:13px;margin-bottom:4px}
+.status-bar.ok{background:#e8f5e9;border:1px solid #a5d6a7;color:#1b5e20}
+.status-bar.err{background:#fce4ec;border:1px solid #f48fb1;color:#880e4f}
+.status-bar.checking{background:#fff8e1;border:1px solid #ffe082;color:#856404}
 .sg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 label{font-size:13px;color:#555;display:block;margin-bottom:6px}
 input[type=number],input[type=text]{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none}
@@ -58,31 +54,22 @@ input[type=color]{width:40px;height:36px;border:1px solid #ddd;border-radius:8px
 .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:#ede9ff;color:#6c5ce7;margin-left:6px;vertical-align:middle}
 .checker{background:repeating-conic-gradient(#ddd 0% 25%,#fff 0% 50%) 0 0/20px 20px !important}
-.credits{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:3px 10px;border-radius:20px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;margin-left:8px;vertical-align:middle}
 </style>
 </head>
 <body>
 <div class="app">
   <h1>🛒 商品批量抠图工具</h1>
-  <p class="sub">remove.bg 专业 AI 引擎 · 像素级精准抠图 · 批量处理打包下载</p>
+  <p class="sub">阿里云视觉智能 · 电商商品像素级精准抠图 · 批量处理打包下载</p>
 
+  <!-- 服务状态 -->
   <div class="panel">
-    <div class="ptitle">🔑 remove.bg API Key
-      <span id="credBadge" style="display:none" class="credits">💳 <span id="credVal">--</span> 次剩余</span>
-    </div>
-    <div class="key-row">
-      <input type="password" id="apiKey" placeholder="粘贴你的 API Key…" autocomplete="off">
-      <button class="btn bp" id="vBtn" onclick="verifyKey()">验证</button>
-    </div>
-    <div class="key-status" id="kStatus"></div>
-    <div class="tip-box">
-      📋 <strong>如何获取免费 Key？</strong><br>
-      1. 访问 <a href="https://www.remove.bg/api" target="_blank">remove.bg/api</a> → 注册账号<br>
-      2. 登录进入 <a href="https://www.remove.bg/dashboard#api-key" target="_blank">Dashboard → API Key</a> 复制<br>
-      3. 免费每月 <strong>50次</strong>，付费后获高清输出
+    <div class="ptitle">⚙️ 服务状态</div>
+    <div class="status-bar checking" id="statusBar">
+      <span class="spin"></span> 正在检测阿里云服务连接…
     </div>
   </div>
 
+  <!-- 上传 -->
   <div class="panel">
     <div class="ptitle">📁 上传商品图片</div>
     <div class="dz" id="dz">
@@ -93,6 +80,7 @@ input[type=color]{width:40px;height:36px;border:1px solid #ddd;border-radius:8px
     </div>
   </div>
 
+  <!-- 设置 -->
   <div class="panel">
     <div class="ptitle">🎨 背景与输出设置</div>
     <div class="sg">
@@ -115,6 +103,7 @@ input[type=color]{width:40px;height:36px;border:1px solid #ddd;border-radius:8px
     </div>
   </div>
 
+  <!-- 队列 -->
   <div class="panel" id="qp" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div class="ptitle" style="margin:0">📋 图片队列 <span class="badge" id="qc">0 张</span></div>
@@ -136,14 +125,35 @@ input[type=color]{width:40px;height:36px;border:1px solid #ddd;border-radius:8px
     </div>
   </div>
 
-  <p style="font-size:12px;color:#ccc;text-align:center;margin-top:8px">remove.bg 专业引擎 · API Key 仅在本地使用</p>
+  <p style="font-size:12px;color:#ccc;text-align:center;margin-top:8px">阿里云视觉智能开放平台 · 电商商品专用抠图模型</p>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const items = [];
 let ctab = 0;
-let verifiedKey = '';
+let serviceReady = false;
+
+// 检测服务状态
+async function checkService() {
+  try {
+    const resp = await fetch('/api/account');
+    const data = await resp.json();
+    const bar = document.getElementById('statusBar');
+    if (resp.ok && data.valid) {
+      bar.className = 'status-bar ok';
+      bar.innerHTML = `✅ 阿里云服务已就绪（${data.keyId}）· 可以开始上传图片抠图`;
+      serviceReady = true;
+    } else {
+      bar.className = 'status-bar err';
+      bar.innerHTML = `❌ 服务配置异常：${data.error || '请检查 Vercel 环境变量设置'}`;
+    }
+  } catch(e) {
+    document.getElementById('statusBar').className = 'status-bar err';
+    document.getElementById('statusBar').innerHTML = '❌ 无法连接服务，请刷新重试';
+  }
+}
+checkService();
 
 function readDU(file){return new Promise((r,j)=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.onerror=j;fr.readAsDataURL(file);});}
 function loadImg(src){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=src;});}
@@ -155,34 +165,7 @@ document.getElementById('fi').onchange=e=>addFiles(e.target.files);
 document.getElementById('dz').ondragover=e=>{e.preventDefault();document.getElementById('dz').classList.add('over');};
 document.getElementById('dz').ondragleave=()=>document.getElementById('dz').classList.remove('over');
 document.getElementById('dz').ondrop=e=>{e.preventDefault();document.getElementById('dz').classList.remove('over');addFiles(e.dataTransfer.files);};
-document.getElementById('apiKey').onkeydown=e=>{if(e.key==='Enter')verifyKey();};
 function ss(w,h){document.getElementById('ow').value=w;document.getElementById('oh').value=h;}
-
-async function verifyKey(){
-  const key=document.getElementById('apiKey').value.trim();
-  if(!key){setKS('error','请先填入 API Key');return;}
-  const btn=document.getElementById('vBtn');
-  btn.disabled=true;btn.innerHTML='<span class="spin"></span>验证中…';
-  try{
-    // 通过自己的代理验证（避免CORS）
-    const resp=await fetch('/api/account',{headers:{'X-Api-Key':key}});
-    const data=await resp.json();
-    if(resp.ok&&data.data){
-      const c=data.data.attributes?.credits||{};
-      verifiedKey=key;
-      document.getElementById('apiKey').className='valid';
-      setKS('success',`✅ 验证成功！剩余：免费 ${c.subscription||0} 次 / 付费 ${c.payg||0} 次`);
-      document.getElementById('credVal').textContent=(c.subscription||0)+(c.payg||0);
-      document.getElementById('credBadge').style.display='inline-flex';
-    }else{
-      verifiedKey='';document.getElementById('apiKey').className='invalid';
-      setKS('error','❌ Key 无效：'+(data.errors?.[0]?.title||'验证失败'));
-    }
-  }catch(e){setKS('error','❌ 请求失败：'+e.message);}
-  btn.disabled=false;btn.textContent='验证';
-}
-
-function setKS(t,m){const el=document.getElementById('kStatus');el.style.color={success:'#27ae60',error:'#e74c3c'}[t]||'#888';el.textContent=m;}
 
 async function addFiles(files){
   const arr=Array.from(files).filter(f=>f.type.startsWith('image/'));
@@ -232,21 +215,25 @@ function clearAll(){items.length=0;render();document.getElementById('qp').style.
 function sw(t){ctab=t;document.getElementById('t0').className='tab'+(t===0?' active':'');document.getElementById('t1').className='tab'+(t===1?' active':'');document.getElementById('og').style.display=t===0?'grid':'none';document.getElementById('rg').style.display=t===1?'grid':'none';}
 
 async function processOne(it){
-  it.status='processing';it.msg='🤖 AI 抠图中…';render();
-  const res=await fetch(it.du);
-  const blob=await res.blob();
-  const form=new FormData();
-  form.append('image_file',blob,it.name);
-  form.append('size','auto');
+  it.status='processing';it.msg='🤖 AI 识别中…';render();
 
-  // 请求自己的代理接口 /api/remove
-  const resp=await fetch('/api/remove',{method:'POST',headers:{'X-Api-Key':verifiedKey},body:form});
-  if(!resp.ok){
-    const err=await resp.json().catch(()=>({}));
-    throw new Error(err.errors?.[0]?.title||`HTTP ${resp.status}`);
+  // 提取 base64 数据（去掉 data:image/xxx;base64, 前缀）
+  const base64 = it.du.split(',')[1];
+
+  const resp = await fetch('/api/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64: base64 })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(err.error || `HTTP ${resp.status}`);
   }
-  const pngBlob=await resp.blob();
-  const pngDU=await new Promise((r,j)=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.onerror=j;fr.readAsDataURL(pngBlob);});
+
+  // 返回的是 PNG 图片二进制
+  const pngBlob = await resp.blob();
+  const pngDU = await new Promise((r,j)=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.onerror=j;fr.readAsDataURL(pngBlob);});
 
   it.msg='🖼️ 合成背景…';render();
   const oW=parseInt(document.getElementById('ow').value)||800;
@@ -266,7 +253,7 @@ async function processOne(it){
 }
 
 async function procAll(){
-  if(!verifiedKey){alert('请先验证 API Key！');return;}
+  if(!serviceReady){alert('服务尚未就绪，请等待或刷新页面重试');return;}
   const pending=items.filter(it=>it.status!=='done');
   if(!pending.length){alert('所有图片已处理完成！');return;}
   const btn=document.getElementById('procBtn');
