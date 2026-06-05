@@ -2,6 +2,9 @@
   "name": "bg-remover",
   "version": "1.0.0",
   "description": "商品批量抠图工具",
+  "scripts": {
+    "build": "echo 'No build needed'"
+  },
   "engines": {
     "node": ">=18"
   }
