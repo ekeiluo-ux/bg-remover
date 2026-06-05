@@ -1,5 +1,20 @@
-// api/remove.js — Vercel Serverless Function
-export const config = { api: { bodyParser: false } };
+// api/remove.js — 调用阿里云视觉智能开放平台商品分割 API
+import crypto from 'crypto';
+
+export const config = { api: { bodyParser: true, sizeLimit: '10mb' } };
+
+function sign(secret, stringToSign) {
+  return crypto.createHmac('sha1', secret + '&')
+    .update(stringToSign)
+    .digest('base64');
+}
+
+function encodeRFC3986(str) {
+  return encodeURIComponent(str)
+    .replace(/!/g, '%21').replace(/'/g, '%27')
+    .replace(/\(/g, '%28').replace(/\)/g, '%29')
+    .replace(/\*/g, '%2A');
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -8,89 +23,86 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const apiKey = req.headers['x-api-key'];
-  if (!apiKey) return res.status(400).json({ error: 'Missing API Key' });
+  const accessKeyId = process.env.ALI_KEY_ID;
+  const accessKeySecret = process.env.ALI_KEY_SECRET;
+  if (!accessKeyId || !accessKeySecret) {
+    return res.status(500).json({ error: 'Server missing Aliyun credentials' });
+  }
 
   try {
-    // 读取请求体
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const body = Buffer.concat(chunks);
-    const contentType = req.headers['content-type'];
-
-    // 解析原始 FormData，提取图片文件
-    const boundary = contentType.split('boundary=')[1];
-    const bodyStr = body.toString('binary');
-    const parts = bodyStr.split('--' + boundary);
-    
-    let imageBuffer = null;
-    let imageName = 'image.jpg';
-    let imageMime = 'image/jpeg';
-
-    for (const part of parts) {
-      if (part.includes('Content-Disposition') && part.includes('image_file')) {
-        const headerEnd = part.indexOf('\r\n\r\n');
-        if (headerEnd === -1) continue;
-        
-        // 提取文件名和 MIME
-        const headerStr = part.slice(0, headerEnd);
-        const nameMatch = headerStr.match(/filename="([^"]+)"/);
-        const mimeMatch = headerStr.match(/Content-Type:\s*([^\r\n]+)/);
-        if (nameMatch) imageName = nameMatch[1];
-        if (mimeMatch) imageMime = mimeMatch[1].trim();
-        
-        // 提取二进制内容（去掉末尾 \r\n）
-        const content = part.slice(headerEnd + 4, part.lastIndexOf('\r\n'));
-        imageBuffer = Buffer.from(content, 'binary');
-        break;
-      }
+    // 读取前端传来的 base64 图片数据
+    const { imageBase64, imageUrl } = req.body;
+    if (!imageBase64 && !imageUrl) {
+      return res.status(400).json({ error: 'Missing image data' });
     }
 
-    if (!imageBuffer) {
-      return res.status(400).json({ error: 'No image found in request' });
+    // 构建阿里云 API 签名参数
+    const timestamp = new Date().toISOString().replace(/\.\d{3}Z/, 'Z');
+    const nonce = Math.random().toString(36).slice(2) + Date.now();
+
+    const params = {
+      Action: 'SegmentCommodity',       // 商品分割接口
+      Version: '2019-09-30',
+      Format: 'JSON',
+      AccessKeyId: accessKeyId,
+      SignatureMethod: 'HMAC-SHA1',
+      SignatureVersion: '1.0',
+      SignatureNonce: nonce,
+      Timestamp: timestamp,
+    };
+
+    // 如果是 base64，用 imageBase64 参数；否则用 URL
+    if (imageBase64) {
+      params.ImageURL = `data:image/jpeg;base64,${imageBase64}`;
+    } else {
+      params.ImageURL = imageUrl;
     }
 
-    // 重新构建 FormData 发给 remove.bg，加入 type=product 参数
-    const newBoundary = '----FormBoundary' + Math.random().toString(36).slice(2);
-    const CRLF = '\r\n';
+    // 构建待签名字符串
+    const sortedKeys = Object.keys(params).sort();
+    const canonicalQuery = sortedKeys
+      .map(k => `${encodeRFC3986(k)}=${encodeRFC3986(params[k])}`)
+      .join('&');
+    const stringToSign = `POST&${encodeRFC3986('/')}&${encodeRFC3986(canonicalQuery)}`;
+    const signature = sign(accessKeySecret, stringToSign);
 
-    const buildPart = (name, value) =>
-      `--${newBoundary}${CRLF}Content-Disposition: form-data; name="${name}"${CRLF}${CRLF}${value}${CRLF}`;
+    // 构建请求体
+    const body = new URLSearchParams();
+    sortedKeys.forEach(k => body.append(k, params[k]));
+    body.append('Signature', signature);
 
-    let formBody = Buffer.from(
-      buildPart('size', 'auto') +
-      buildPart('type', 'product') +          // ← 指定为产品图，识别更准
-      buildPart('type_level', 'latest') +     // ← 使用最新模型
-      buildPart('format', 'png') +
-      buildPart('channels', 'rgba') +
-      `--${newBoundary}${CRLF}` +
-      `Content-Disposition: form-data; name="image_file"; filename="${imageName}"${CRLF}` +
-      `Content-Type: ${imageMime}${CRLF}${CRLF}`,
-      'binary'
-    );
-
-    formBody = Buffer.concat([
-      formBody,
-      imageBuffer,
-      Buffer.from(`${CRLF}--${newBoundary}--${CRLF}`, 'binary')
-    ]);
-
-    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+    const endpoint = 'https://imageseg.cn-shanghai.aliyuncs.com/';
+    const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'X-Api-Key': apiKey,
-        'Content-Type': `multipart/form-data; boundary=${newBoundary}`,
-      },
-      body: formBody,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
     });
 
-    const resContentType = response.headers.get('content-type') || 'image/png';
-    res.setHeader('Content-Type', resContentType);
-    const data = await response.arrayBuffer();
-    res.status(response.status).send(Buffer.from(data));
+    const result = await response.json();
+
+    if (result.Code || result.code) {
+      const errCode = result.Code || result.code;
+      const errMsg = result.Message || result.message || '未知错误';
+      return res.status(400).json({ error: `阿里云错误 ${errCode}: ${errMsg}` });
+    }
+
+    // 返回前景图 URL（阿里云返回的是 OSS 链接）
+    const imageUrlResult = result.Data?.Elements?.[0]?.ImageURL
+      || result.Data?.ImageURL
+      || result.Data?.elements?.[0]?.imageUrl;
+
+    if (!imageUrlResult) {
+      return res.status(500).json({ error: '未获取到分割结果', raw: result });
+    }
+
+    // 下载前景图并转发给前端
+    const imgResp = await fetch(imageUrlResult);
+    const imgBuf = await imgResp.arrayBuffer();
+    res.setHeader('Content-Type', 'image/png');
+    return res.status(200).send(Buffer.from(imgBuf));
 
   } catch (err) {
-    console.error('Proxy error:', err);
-    res.status(500).json({ error: 'Proxy failed: ' + err.message });
+    console.error('Aliyun API error:', err);
+    res.status(500).json({ error: err.message });
   }
 }
