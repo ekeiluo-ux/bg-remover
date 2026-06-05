@@ -23,24 +23,49 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageBase64 } = req.body;
+    const { imageBase64, mimeType } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' });
 
-    // 构建参数 — 使用 base64 编码内容直接传输（非 data URL）
+    // Step 1: 把图片上传到 imgbb 免费图床，获取公网 URL
+    const mime = mimeType || 'image/jpeg';
+    const imgbbApiKey = process.env.IMGBB_KEY; // 可选，不填则用备用方案
+
+    let imageURL;
+
+    if (imgbbApiKey) {
+      // 使用 imgbb 图床
+      const form = new URLSearchParams();
+      form.append('key', imgbbApiKey);
+      form.append('image', imageBase64);
+      const uploadResp = await fetch('https://api.imgbb.com/1/upload', {
+        method: 'POST',
+        body: form,
+      });
+      const uploadResult = await uploadResp.json();
+      if (!uploadResult.success) throw new Error('imgbb upload failed: ' + JSON.stringify(uploadResult));
+      imageURL = uploadResult.data.url;
+    } else {
+      // 备用方案：使用 Vercel 内置的 base64 data URL（阿里云新版支持）
+      const ext = mime.includes('png') ? 'png' : 'jpg';
+      imageURL = `data:${mime};base64,${imageBase64}`;
+    }
+
+    console.log('Image URL type:', imageURL.startsWith('data:') ? 'base64 dataURL' : 'public URL');
+
+    // Step 2: 调用阿里云 SegmentCommodity API（正确版本：2019-12-30）
     const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
     const nonce = crypto.randomBytes(16).toString('hex');
 
     const params = {
       Action: 'SegmentCommodity',
-      Version: '2019-09-30',
+      Version: '2019-12-30',        // ✅ 正确版本号
       Format: 'JSON',
       AccessKeyId: accessKeyId,
       SignatureMethod: 'HMAC-SHA1',
       SignatureVersion: '1.0',
       SignatureNonce: nonce,
       Timestamp: timestamp,
-      // 直接传 base64 字符串（不含 data:image 前缀）
-      PicContent: imageBase64,
+      ImageURL: imageURL,
     };
 
     const sortedKeys = Object.keys(params).sort();
@@ -49,7 +74,6 @@ export default async function handler(req, res) {
       .join('&');
 
     const stringToSign = `POST&${percentEncode('/')}&${percentEncode(canonicalizedQuery)}`;
-
     const signature = crypto
       .createHmac('sha1', accessKeySecret + '&')
       .update(stringToSign)
@@ -59,7 +83,7 @@ export default async function handler(req, res) {
     sortedKeys.forEach(k => formBody.append(k, params[k]));
     formBody.append('Signature', signature);
 
-    console.log('Calling SegmentCommodity with PicContent, length:', imageBase64.length);
+    console.log('Calling SegmentCommodity v2019-12-30...');
 
     const response = await fetch('https://imageseg.cn-shanghai.aliyuncs.com/', {
       method: 'POST',
@@ -68,10 +92,8 @@ export default async function handler(req, res) {
     });
 
     const result = await response.json();
-    console.log('Aliyun result keys:', Object.keys(result));
     console.log('Aliyun result:', JSON.stringify(result).slice(0, 500));
 
-    // 错误处理
     if (result.Code) {
       return res.status(400).json({ error: `阿里云错误 ${result.Code}: ${result.Message}` });
     }
@@ -87,7 +109,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: '未获取到分割结果', raw: result });
     }
 
-    // 下载结果图并转发给前端
+    // 下载结果图并返回给前端
     const imgResp = await fetch(resultUrl);
     const imgBuf = await imgResp.arrayBuffer();
     res.setHeader('Content-Type', 'image/png');
