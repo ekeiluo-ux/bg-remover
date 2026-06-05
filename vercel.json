@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/remove", "destination": "/api/remove" },
+    { "source": "/api/account", "destination": "/api/account" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
